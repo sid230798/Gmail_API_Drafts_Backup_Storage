@@ -1,0 +1,188 @@
+---------------------------------------------------------------------------------------------------------------------
+
+Name :- Siddharth Nahar
+Entry No :- 2016csb1043
+Date :- 22/11/18
+
+----------------------------------------------------------------------------------------------------------------------
+
+* For Authorization of Email for Scopes :
+
+	private static Credential getCredentials(final NetHttpTransport HTTP_TRANSPORT) throws IOException {
+	
+		/*Get Client Credentials*/
+		InputStream in = Authentication.class.getResourceAsStream(CREDENTIALS_FILE_PATH);
+		GoogleClientSecrets clientSecrets = GoogleClientSecrets.load(JSON_FACTORY, new InputStreamReader(in));
+
+		/*Build an Authorization request for permission according to Scopes*/
+		GoogleAuthorizationCodeFlow flow = new GoogleAuthorizationCodeFlow.Builder(
+			HTTP_TRANSPORT, JSON_FACTORY, clientSecrets, SCOPES)
+			.setDataStoreFactory(new FileDataStoreFactory(new java.io.File(TOKENS_DIRECTORY_PATH)))
+			.setAccessType("offline")
+			.build();
+
+		/*Set the Reciever for most common port and return Credentials Object Created*/
+		LocalServerReceiver receiver = new LocalServerReceiver.Builder().setPort(8888).build();
+		return new AuthorizationCodeInstalledApp(flow, receiver).authorize("user");
+
+	}
+
+	/*This Function returns the Gmail Service Object Requested by Reader and Writer*/
+	public static Gmail serviceObject() throws IOException, GeneralSecurityException{
+
+		/*Setting up Gmail Service Object with parameters specified*/
+		final NetHttpTransport HTTP_TRANSPORT = GoogleNetHttpTransport.newTrustedTransport();
+		Gmail service = new Gmail.Builder(HTTP_TRANSPORT, JSON_FACTORY, getCredentials(HTTP_TRANSPORT))
+		        .setApplicationName(APPLICATION_NAME)
+		        .build();
+
+		return service;
+	}
+
+--------------------------------------------------------------------------------------------------------------------------
+
+* For Creating Draft Message
+
+
+	/*Create an Empty Message with filePath as subject*/
+	public static MimeMessage createEmail(String subject, String body)throws MessagingException {
+
+		/*Create Objects of class for MimeMessgae*/
+		Properties props = new Properties();
+		Session session = Session.getDefaultInstance(props, null);
+
+		MimeMessage email = new MimeMessage(session);
+
+		/*Set From Address as your gmail id and set subject*/
+		email.setFrom(new InternetAddress("sid23nahar@gmail.com"));
+		/*
+		email.addRecipient(javax.mail.Message.RecipientType.TO,
+			new InternetAddress("sid23nahar@gmail.com"));*/
+		email.setSubject(subject);
+		email.setText(body);
+
+		return email;
+
+	}
+
+	/**
+	* Create a message from an email.
+	*
+	* @param emailContent Email to be set to raw of message
+	* @return a message containing a base64url encoded email
+	* @throws IOException
+	* @throws MessagingException
+	*/
+	public static Message createMessageWithEmail(MimeMessage emailContent) throws MessagingException, IOException {
+
+		ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+		emailContent.writeTo(buffer);
+
+		/*Encode message to raw wncoding and set to message*/
+		byte[] bytes = buffer.toByteArray();
+		String encodedEmail = Base64.encodeBase64URLSafeString(bytes);
+
+		Message message = new Message();
+		message.setRaw(encodedEmail);
+		return message;
+
+	}
+
+
+	public void flush() throws IOException {
+	//TODO: Implement proper logic
+
+		try{
+			/*Create new email,Messgae and Update the Previous Draft*/
+			//System.out.println("This Data Will be Written : "+this.DataWritten);
+			if(this.DataWritten.equals("") == false){ 
+
+				String userId = "me";
+				/*Get email and message part of that email to store as Draft*/
+	    			MimeMessage email = Drafts.createEmail(filePath, this.DataWritten);
+				Message updated = Drafts.createMessageWithEmail(email);
+
+				/*Create new Draft and set message*/
+				Draft draft = new Draft();
+				draft.setMessage(updated);
+
+				/*Create the draft*/
+				draft = gmailService.users().drafts().create(userId, draft).execute();
+
+			}else{
+
+				//System.out.println("No Message Content to Write");
+				return;
+			}			
+
+		}catch(MessagingException e){
+
+			System.out.println(e.getMessage());
+
+		}
+
+		/*Empty the Buffer*/
+		this.DataWritten = "";
+
+	
+	}
+
+----------------------------------------------------------------------------------------------------------------
+
+*Read Body and Subject
+
+	/*Subject is stored in message part of Draft get Message ID*/
+	String messageId = sample.getMessage().getId();
+
+	/*Request full Message content text/plain type or mime message type*/
+	Message content = gmailService.users().messages().get(userId, messageId).setFormat("full").execute();
+	MessagePart part = content.getPayload();
+	//System.out.println(part);
+
+	/*Get the Header List which consistes subject*/
+	List<MessagePartHeader> header = part.getHeaders();
+
+
+	/*Iterate through each header and check for Subject name*/
+	for(MessagePartHeader head : header){
+
+		if("Subject".equals(head.getName()) == true){
+
+			//System.out.println("Subject of Mail = "+head.getValue());
+			
+			/*If Subject is Same what are we looking then decode message*/
+			if(head.getValue().equals(this.filePath) == true){
+
+				String type = part.getMimeType();
+				
+				/*If message only contains plainText then decode bytes*/
+				if(type.equals("text/plain") == true){
+
+					MessagePartBody body = part.getBody();
+					byte[] m = body.decodeData();
+					//System.out.println("Body Content : "+new String(m));
+					bodyMessage = new String(m) + bodyMessage;
+
+				
+				}else{
+					/*Else it contains encoded message extract it*/
+					List<MessagePart> allParts = part.getParts();
+					for(MessagePart p : allParts){
+					
+						if(p.getMimeType().equals("text/plain") == true){
+
+							MessagePartBody body = p.getBody();
+							byte[] m = body.decodeData();
+							//System.out.println("Body Content : "+new String(m));
+							bodyMessage = new String(m) + bodyMessage;
+							
+
+						}
+					}
+				}
+			}
+		}
+
+	}
+
+------------------------------------------------------------------------------------------------------------------
